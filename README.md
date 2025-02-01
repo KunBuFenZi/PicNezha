@@ -3,7 +3,7 @@
 使用 api 将哪吒监控数据转换成图片
 
 > [!WARNING]
-> 仅 v0 测试可用，咱没用过 v1，不清楚 v1 的 api 是什么样的
+> 仅 v1 测试可用
 
 ## 示例
 
@@ -17,7 +17,8 @@
 2. 设置环境变量
    ```
    API_URL=你的探针地址，如https://example.com/，不需要包括/api/v1/server/details
-   TOKEN=你的探针后台创建的api token
+   USERNAME=探针用户名
+   PASSWORD=探针密码
    TEXT=（可选）图片中header的文本，若不填则使用API_URL
    ```
 3. 部署后，访问`https://网址/status`即可看到图片
