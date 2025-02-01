@@ -75,10 +75,8 @@ function measureServerCard(ctx, server) {
 app.get("/status", async (req, res) => {
   try {
     const apiUrl = process.env.API_URL?.replace(/\/$/, "");
-    // 认证获取 token
     const token = await authenticate(apiUrl, process.env.USERNAME, process.env.PASSWORD);
     
-    // 获取服务器数据
     const response = await axios.get(`${apiUrl}/api/v1/server`, {
       headers: {
         Authorization: `Bearer ${token}`
@@ -92,7 +90,7 @@ app.get("/status", async (req, res) => {
     // 解析服务器数据
     const servers = response.data.data.map(server => ({
       name: server.name || "未知",
-      statusText: isOnline(server) ? "❇️在线" : "❌离线", // 改用 statusText
+      statusText: isOnline(server) ? "❇️在线" : "❌离线",
       host: {
         Platform: server.host?.platform || "未知",
         PlatformVersion: server.host?.version || "",
@@ -108,13 +106,17 @@ app.get("/status", async (req, res) => {
       }
     }));
 
-    // 预先计算布局
-    ctx.font = 'bold 16px "Segoe UI Emoji", "WQY-ZenHei"';
+    // 创建临时 Canvas 用于测量
+    const measureCanvas = new Canvas(1, 1);
+    const measureCtx = measureCanvas.getContext('2d');
+    measureCtx.font = 'bold 16px "Segoe UI Emoji", "WQY-ZenHei"';
+
+    // 预先计算每个服务器卡片的尺寸
     let maxCardWidth = 0;
     let maxCardHeight = 0;
     
     servers.forEach(server => {
-      const dims = measureServerCard(ctx, server);
+      const dims = measureServerCard(measureCtx, server);
       maxCardWidth = Math.max(maxCardWidth, dims.width);
       maxCardHeight = Math.max(maxCardHeight, dims.height);
     });
@@ -123,15 +125,15 @@ app.get("/status", async (req, res) => {
     config.SERVER_WIDTH = maxCardWidth + config.PADDING * 2;
     config.SERVER_HEIGHT = maxCardHeight + config.PADDING * 2;
     
-    // 重新计算画布尺寸
+    // 计算画布尺寸
     const rows = Math.ceil(servers.length / config.SERVERS_PER_ROW);
     const canvasWidth = config.SERVER_WIDTH * config.SERVERS_PER_ROW + config.PADDING * (config.SERVERS_PER_ROW + 1);
     const canvasHeight = config.SERVER_HEIGHT * rows + 90 + config.PADDING * (rows + 1);
 
-    // 创建画布
-    let canvas = new Canvas(canvasWidth, canvasHeight),
-      ctx = canvas.getContext("2d");
-    ctx.textDrawingMode = "glyph"; // https://github.com/Automattic/node-canvas/issues/760#issuecomment-2260271607
+    // 创建实际绘图用的画布
+    let canvas = new Canvas(canvasWidth, canvasHeight);
+    let ctx = canvas.getContext("2d");
+    ctx.textDrawingMode = "glyph";
 
     // 背景纯色（注释掉会变透明）
     // ctx.fillStyle = "#ffffff";
