@@ -22,6 +22,10 @@ FontLibrary.use("WQY-ZenHei", currentDir + "/wqy-zenhei.ttc");
 // FontLibrary.use("Noto Color Emoji", __dirname + "/NotoColorEmoji.ttf");
 FontLibrary.use("Segoe UI Emoji", currentDir + "/seguiemj.ttf");
 
+// 添加新的常量
+const REFRESH_INTERVAL = 2000; // 刷新间隔(毫秒)
+const clients = new Set(); // 存储所有连接的客户端
+
 // 添加登录认证函数
 async function authenticate(apiUrl, username, password) {
   const response = await axios.post(`${apiUrl}/api/v1/login`, {
@@ -266,6 +270,25 @@ app.get("/status", async (req, res) => {
   }
 });
 
+// 添加新的路由用于 MJPEG 流
+app.get("/stream", async (req, res) => {
+  // 设置 MJPEG 相关头部
+  res.writeHead(200, {
+    'Content-Type': 'multipart/x-mixed-replace; boundary=frame',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Pragma': 'no-cache'
+  });
+
+  // 将当前连接添加到客户端集合
+  clients.add(res);
+
+  // 当客户端断开连接时移除
+  req.on('close', () => {
+    clients.delete(res);
+  });
+});
+
 function isOnline(server) {
   const now = Date.now();
   const lastActive = new Date(server.last_active).getTime();
@@ -363,10 +386,227 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + " " + sizes[i];
 }
 
+// 添加定时生成图片的函数
+async function generateFrame() {
+  try {
+    // 使用原有的生成图片逻辑
+    const apiUrl = process.env.API_URL?.replace(/\/$/, "");
+    const token = await authenticate(apiUrl, process.env.USERNAME, process.env.PASSWORD);
+    
+    const response = await axios.get(`${apiUrl}/api/v1/server`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (!response.data.success) {
+      throw new Error(response.data.message || "API request failed");
+    }
+
+    // 解析服务器数据
+    const servers = response.data.data.map(server => ({
+      name: server.name || "未知",
+      statusText: isOnline(server) ? "❇️在线" : "❌离线",  // 改用 statusText
+      host: {
+        Platform: server.host?.platform || "未知",
+        PlatformVersion: server.host?.version || "",
+        CountryCode: server.geoip?.country_code || "UN",
+        MemTotal: server.host?.mem_total || 1,
+      },
+      status: {
+        CPU: server.state?.cpu || 0,
+        MemUsed: server.state?.mem_used || 0,
+        Uptime: server.state?.uptime || 0,
+        NetInTransfer: server.state?.net_in_transfer || 0,
+        NetOutTransfer: server.state?.net_out_transfer || 0,
+      }
+    }));
+
+    // 创建画布
+    let canvas = new Canvas(800, servers.length * 100 + 90),
+      ctx = canvas.getContext("2d");
+    ctx.textDrawingMode = "glyph"; // https://github.com/Automattic/node-canvas/issues/760#issuecomment-2260271607
+
+    // 背景纯色（注释掉会变透明）
+    // ctx.fillStyle = "#ffffff";
+    // ctx.fillRect(0, 0, 800, canvas.height);
+
+    // 背景卡片
+    const cardX = 10;
+    const cardY = 10;
+    const cardWidth = canvas.width - 20;
+    const cardHeight = canvas.height - 20;
+    const borderRadius = 16;
+
+    // 阴影设置
+    ctx.shadowColor = "rgba(0, 0, 0, 0.2)"; // 阴影颜色
+    ctx.shadowBlur = 10; // 模糊程度
+
+    // 30度角渐变
+    const angle = Math.PI / 6;
+    const d = (cardHeight - cardWidth * Math.tan(angle)) / 2;
+    const startY = cardY + d;
+    const endY = cardY + cardHeight - d;
+
+    // 创建渐变颜色
+    const gradient = ctx.createLinearGradient(
+      cardX,
+      startY,
+      cardX + cardWidth,
+      endY
+    );
+    gradient.addColorStop(0, "#f5f9fa");
+    gradient.addColorStop(0.5, "#ecf9f6");
+    gradient.addColorStop(1, "#f5f9fa");
+
+    // 绘制圆角卡片
+    ctx.beginPath();
+    ctx.moveTo(cardX + borderRadius, cardY);
+    ctx.lineTo(cardX + cardWidth - borderRadius, cardY);
+    ctx.quadraticCurveTo(
+      cardX + cardWidth,
+      cardY,
+      cardX + cardWidth,
+      cardY + borderRadius
+    );
+    ctx.lineTo(cardX + cardWidth, cardY + cardHeight - borderRadius);
+    ctx.quadraticCurveTo(
+      cardX + cardWidth,
+      cardY + cardHeight,
+      cardX + cardWidth - borderRadius,
+      cardY + cardHeight
+    );
+    ctx.lineTo(cardX + borderRadius, cardY + cardHeight);
+    ctx.quadraticCurveTo(
+      cardX,
+      cardY + cardHeight,
+      cardX,
+      cardY + cardHeight - borderRadius
+    );
+    ctx.lineTo(cardX, cardY + borderRadius);
+    ctx.quadraticCurveTo(cardX, cardY, cardX + borderRadius, cardY);
+    ctx.closePath();
+
+    // 填充
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // 重置阴影（防止后续影响）
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+
+    // 卡片 Header
+    const headerHeight = 50;
+    const headerGradient = ctx.createLinearGradient(
+      cardX,
+      cardY,
+      cardX + cardWidth,
+      cardY
+    );
+    headerGradient.addColorStop(0, "#88FDCD");
+    headerGradient.addColorStop(1, "#95C4F5");
+
+    // 绘制 Header 区域
+    ctx.beginPath();
+    ctx.moveTo(cardX + borderRadius, cardY); // 左上角圆角开始
+    ctx.lineTo(cardX + cardWidth - borderRadius, cardY); // 顶边直线
+    ctx.quadraticCurveTo(
+      cardX + cardWidth,
+      cardY,
+      cardX + cardWidth,
+      cardY + borderRadius
+    ); // 右上角圆角
+    ctx.lineTo(cardX + cardWidth, cardY + headerHeight); // 右侧直线
+    ctx.lineTo(cardX, cardY + headerHeight); // 底边直线
+    ctx.lineTo(cardX, cardY + borderRadius); // 左侧直线
+    ctx.quadraticCurveTo(cardX, cardY, cardX + borderRadius, cardY); // 左上角圆角
+    ctx.closePath();
+
+    ctx.fillStyle = headerGradient;
+    ctx.fill();
+
+    // 绘制 Header 文本
+    const headerText = process.env.TEXT || process.env.API_URL || "探针";
+    ctx.fillStyle = "#000000";
+    ctx.font = '20px "Segoe UI Emoji", "WQY-ZenHei", Arial';
+    ctx.textBaseline = "middle"; // 垂直居中
+    ctx.fillText(headerText, cardX + 20, cardY + headerHeight / 2);
+    ctx.textBaseline = "alphabetic"; // 重置文本基线为对齐到标准字母基线
+
+    servers.forEach((server, index) => {
+      const y = index * 100 + 90;
+
+      // 服务器名称和状态
+      ctx.fillStyle = "#000";
+      ctx.font = 'bold 16px "Segoe UI Emoji", "WQY-ZenHei"';
+      ctx.fillText(`${server.name} ${server.statusText}`, 30, y);
+
+      // 系统信息
+      ctx.font = '14px "Segoe UI Emoji", "WQY-ZenHei", Arial';
+      ctx.fillText(
+        `🖥️ ${server.host.Platform}`,
+        30,
+        y + 25
+      );
+
+      // 国家
+      ctx.fillText(`📍 ${server.host.CountryCode}`, 30, y + 45);
+
+      // Uptime
+      ctx.fillText(
+        `⏱️ Uptime: ${moment.duration(server.status.Uptime, "seconds").humanize()}`,
+        30,
+        y + 65
+      );
+
+      // CPU Usage
+      ctx.fillText("💻 CPU:", 300, y + 25);
+      drawProgressBar(ctx, 365, y + 12, 200, server.status.CPU);
+
+      // RAM Usage
+      ctx.fillText("🧠 RAM:", 300, y + 55);
+      const ramUsage = (server.status.MemUsed / server.host.MemTotal) * 100;
+      drawProgressBar(ctx, 365, y + 42, 200, ramUsage);
+
+      // 网络流量
+      ctx.fillText("总下载:", 620, y + 25);
+      ctx.fillText(formatBytes(server.status.NetInTransfer), 670, y + 25);
+
+      ctx.fillText("总上传:", 620, y + 55);
+      ctx.fillText(formatBytes(server.status.NetOutTransfer), 670, y + 55);
+    });
+
+    ctx.font = "10px Arial";
+    ctx.fillStyle = "rgba(0, 0, 0, 0.54)";
+    ctx.fillText(
+      "Powered By PicNezha (https://github.com/SkyAerope/PicNezha)",
+      canvas.width - 350,
+      canvas.height - 20
+    );
+
+    const buffer = await canvas.toBuffer("image/jpeg");
+    
+    // 向所有连接的客户端发送新帧
+    clients.forEach(client => {
+      client.write('--frame\r\n');
+      client.write('Content-Type: image/jpeg\r\n');
+      client.write(`Content-Length: ${buffer.length}\r\n`);
+      client.write('\r\n');
+      client.write(buffer);
+      client.write('\r\n');
+    });
+
+  } catch (error) {
+    console.error("Error generating frame:", error);
+  }
+}
+
 if (!netlify) {
   app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}/status`);
   });
+  // 启动定时更新
+  setInterval(generateFrame, REFRESH_INTERVAL);
 } else {
   module.exports.handler = serverless(app);
 }
