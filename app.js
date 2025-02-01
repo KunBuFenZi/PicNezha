@@ -54,49 +54,23 @@ app.get("/status", async (req, res) => {
     }
 
     // 解析服务器数据
-    const servers = response.data.data.map(server => {
-      const serverData = {
-        name: server.name,
-        online: isOnline(server),
-        state: server.state || {},
-        host: server.host || {},
-        geoip: server.geoip || {}
-      };
-
-      // 构建模板数据
-      const templateData = {
-        name: serverData.name,
-        status: serverData.online ? "在线" : "离线",
-        cpu: serverData.state.cpu || 0,
-        memory: {
-          used: serverData.state.mem_used || 0,
-          total: serverData.host.mem_total || 1
-        },
-        swap: {
-          used: serverData.state.swap_used || 0,
-          total: serverData.host.swap_total || 1
-        },
-        disk: {
-          used: serverData.state.disk_used || 0,
-          total: serverData.host.disk_total || 1
-        },
-        network: {
-          in: serverData.state.net_in_transfer || 0,
-          out: serverData.state.net_out_transfer || 0,
-          inSpeed: serverData.state.net_in_speed || 0,
-          outSpeed: serverData.state.net_out_speed || 0
-        },
-        load: {
-          l1: serverData.state.load_1 || 0,
-          l5: serverData.state.load_5 || 0, 
-          l15: serverData.state.load_15 || 0
-        },
-        platform: serverData.host.platform || "未知",
-        arch: serverData.host.arch || ""
-      };
-
-      return templateData;
-    });
+    const servers = response.data.data.map(server => ({
+      name: server.name || "未知",
+      status: isOnline(server) ? "❇️在线" : "❌离线",
+      host: {
+        Platform: server.host?.platform || "未知",
+        PlatformVersion: server.host?.version || "",
+        CountryCode: server.geoip?.country_code || "UN",
+        MemTotal: server.host?.mem_total || 1,
+      },
+      status: {
+        CPU: server.state?.cpu || 0,
+        MemUsed: server.state?.mem_used || 0,
+        Uptime: server.state?.uptime || 0,
+        NetInTransfer: server.state?.net_in_transfer || 0,
+        NetOutTransfer: server.state?.net_out_transfer || 0,
+      }
+    }));
 
     // 创建画布
     let canvas = new Canvas(800, servers.length * 100 + 90),
@@ -214,28 +188,25 @@ app.get("/status", async (req, res) => {
     servers.forEach((server, index) => {
       const y = index * 100 + 90;
 
-      // 服务器名称
+      // 服务器名称和状态
       ctx.fillStyle = "#000";
-      // ctx.font = 'bold 16px "Noto Color Emoji", "WQY-ZenHei"';
       ctx.font = 'bold 16px "Segoe UI Emoji", "WQY-ZenHei"';
-      ctx.fillText(server.name, 30, y);
+      ctx.fillText(`${server.name} ${server.status}`, 30, y);
 
-      // 系统
+      // 系统信息
       ctx.font = '14px "Segoe UI Emoji", "WQY-ZenHei", Arial';
       ctx.fillText(
-        `🖥️ ${server.host.Platform} ${server.host.PlatformVersion}`,
+        `🖥️ ${server.host.Platform}`,
         30,
         y + 25
       );
 
       // 国家
-      ctx.fillText(`📍 ${server.host.CountryCode.toUpperCase()}`, 30, y + 45);
+      ctx.fillText(`📍 ${server.host.CountryCode}`, 30, y + 45);
 
       // Uptime
       ctx.fillText(
-        `⏱️ Uptime: ${moment
-          .duration(server.status.Uptime, "seconds")
-          .humanize()}`,
+        `⏱️ Uptime: ${moment.duration(server.status.Uptime, "seconds").humanize()}`,
         30,
         y + 65
       );
