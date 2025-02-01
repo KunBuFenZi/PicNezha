@@ -22,28 +22,81 @@ FontLibrary.use("WQY-ZenHei", currentDir + "/wqy-zenhei.ttc");
 // FontLibrary.use("Noto Color Emoji", __dirname + "/NotoColorEmoji.ttf");
 FontLibrary.use("Segoe UI Emoji", currentDir + "/seguiemj.ttf");
 
+// 添加登录认证函数
+async function authenticate(apiUrl, username, password) {
+  const response = await axios.post(`${apiUrl}/api/v1/login`, {
+    username: username,
+    password: password
+  });
+  
+  if (response.data.success) {
+    return response.data.data.token;
+  }
+  throw new Error('认证失败');
+}
+
+// 在 /status 路由中使用
 app.get("/status", async (req, res) => {
   try {
-    const apiUrl = process.env.API_URL?.replace(/\/$/, ""); // 去掉结尾的斜杠
-    const response = await axios.get(`${apiUrl}/api/v1/server/details`, {
+    const apiUrl = process.env.API_URL?.replace(/\/$/, "");
+    // 认证获取 token
+    const token = await authenticate(apiUrl, process.env.USERNAME, process.env.PASSWORD);
+    
+    // 获取服务器数据
+    const response = await axios.get(`${apiUrl}/api/v1/server`, {
       headers: {
-        Authorization: process.env.TOKEN,
-      },
+        Authorization: `Bearer ${token}`
+      }
     });
 
-    // Check for unauthorized access error
-    if (response.data.code === 403) {
-      throw new Error(response.data.message);
+    if (!response.data.success) {
+      throw new Error(response.data.message || "API request failed");
     }
 
-    // Check if response data and result exist
-    if (!response.data || !response.data.result) {
-      throw new Error("Invalid API response structure");
-    }
+    // 解析服务器数据
+    const servers = response.data.data.map(server => {
+      const serverData = {
+        name: server.name,
+        online: isOnline(server),
+        state: server.state || {},
+        host: server.host || {},
+        geoip: server.geoip || {}
+      };
 
-    const servers = response.data.result
-      .filter((server) => server.status.Uptime > 0 && !server.hide_for_guest)
-      .sort((a, b) => b.display_index - a.display_index);
+      // 构建模板数据
+      const templateData = {
+        name: serverData.name,
+        status: serverData.online ? "在线" : "离线",
+        cpu: serverData.state.cpu || 0,
+        memory: {
+          used: serverData.state.mem_used || 0,
+          total: serverData.host.mem_total || 1
+        },
+        swap: {
+          used: serverData.state.swap_used || 0,
+          total: serverData.host.swap_total || 1
+        },
+        disk: {
+          used: serverData.state.disk_used || 0,
+          total: serverData.host.disk_total || 1
+        },
+        network: {
+          in: serverData.state.net_in_transfer || 0,
+          out: serverData.state.net_out_transfer || 0,
+          inSpeed: serverData.state.net_in_speed || 0,
+          outSpeed: serverData.state.net_out_speed || 0
+        },
+        load: {
+          l1: serverData.state.load_1 || 0,
+          l5: serverData.state.load_5 || 0, 
+          l15: serverData.state.load_15 || 0
+        },
+        platform: serverData.host.platform || "未知",
+        arch: serverData.host.arch || ""
+      };
+
+      return templateData;
+    });
 
     // 创建画布
     let canvas = new Canvas(800, servers.length * 100 + 90),
