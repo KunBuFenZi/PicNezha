@@ -231,7 +231,7 @@ app.get("/status", async (req, res) => {
     ctx.font = "10px Arial";
     ctx.fillStyle = "rgba(0, 0, 0, 0.54)";
     ctx.fillText(
-      "Powered By PicNezha (https://github.com/SkyAerope/PicNezha) Modified By KunBuFenZi",
+      "Powered By PicNezha (https://github.com/SkyAerope/PicNezha)",
       canvas.width - 350,
       canvas.height - 20
     );
