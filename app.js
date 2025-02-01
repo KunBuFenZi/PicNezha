@@ -22,6 +22,14 @@ FontLibrary.use("WQY-ZenHei", currentDir + "/wqy-zenhei.ttc");
 // FontLibrary.use("Noto Color Emoji", __dirname + "/NotoColorEmoji.ttf");
 FontLibrary.use("Segoe UI Emoji", currentDir + "/seguiemj.ttf");
 
+// 添加配置变量
+const config = {
+  SERVERS_PER_ROW: process.env.SERVERS_PER_ROW || 2, // 每行显示服务器数量
+  SERVER_WIDTH: 390, // 每个服务器卡片宽度
+  SERVER_HEIGHT: 100, // 每个服务器卡片高度
+  PADDING: 10 // 卡片间距
+};
+
 // 添加登录认证函数
 async function authenticate(apiUrl, username, password) {
   const response = await axios.post(`${apiUrl}/api/v1/login`, {
@@ -56,7 +64,7 @@ app.get("/status", async (req, res) => {
     // 解析服务器数据
     const servers = response.data.data.map(server => ({
       name: server.name || "未知",
-      status: isOnline(server) ? "❇️在线" : "❌离线",
+      statusText: isOnline(server) ? "❇️在线" : "❌离线", // 改用 statusText
       host: {
         Platform: server.host?.platform || "未知",
         PlatformVersion: server.host?.version || "",
@@ -72,8 +80,13 @@ app.get("/status", async (req, res) => {
       }
     }));
 
+    // 计算画布尺寸
+    const rows = Math.ceil(servers.length / config.SERVERS_PER_ROW);
+    const canvasWidth = config.SERVER_WIDTH * config.SERVERS_PER_ROW + config.PADDING * (config.SERVERS_PER_ROW + 1);
+    const canvasHeight = config.SERVER_HEIGHT * rows + 90 + config.PADDING * (rows + 1);
+
     // 创建画布
-    let canvas = new Canvas(800, servers.length * 100 + 90),
+    let canvas = new Canvas(canvasWidth, canvasHeight),
       ctx = canvas.getContext("2d");
     ctx.textDrawingMode = "glyph"; // https://github.com/Automattic/node-canvas/issues/760#issuecomment-2260271607
 
@@ -186,39 +199,43 @@ app.get("/status", async (req, res) => {
     ctx.textBaseline = "alphabetic"; // 重置文本基线为对齐到标准字母基线
 
     servers.forEach((server, index) => {
-      const y = index * 100 + 90;
+      const row = Math.floor(index / config.SERVERS_PER_ROW);
+      const col = index % config.SERVERS_PER_ROW;
+      
+      const x = config.PADDING + col * (config.SERVER_WIDTH + config.PADDING);
+      const y = 90 + row * (config.SERVER_HEIGHT + config.PADDING);
 
       // 服务器名称和状态
       ctx.fillStyle = "#000";
       ctx.font = 'bold 16px "Segoe UI Emoji", "WQY-ZenHei"';
-      ctx.fillText(`${server.name} ${server.status}`, 30, y);
+      ctx.fillText(`${server.name} ${server.statusText}`, x + 20, y);
 
       // 系统信息
       ctx.font = '14px "Segoe UI Emoji", "WQY-ZenHei", Arial';
       ctx.fillText(
         `🖥️ ${server.host.Platform}`,
-        30,
+        x + 20,
         y + 25
       );
 
       // 国家
-      ctx.fillText(`📍 ${server.host.CountryCode}`, 30, y + 45);
+      ctx.fillText(`📍 ${server.host.CountryCode}`, x + 20, y + 45);
 
       // Uptime
       ctx.fillText(
         `⏱️ Uptime: ${moment.duration(server.status.Uptime, "seconds").humanize()}`,
-        30,
+        x + 20,
         y + 65
       );
 
       // CPU Usage
-      ctx.fillText("💻 CPU:", 300, y + 25);
-      drawProgressBar(ctx, 365, y + 12, 200, server.status.CPU);
+      ctx.fillText("💻 CPU:", x + 180, y + 25);
+      drawProgressBar(ctx, x + 235, y + 12, 120, server.status.CPU);
 
       // RAM Usage
-      ctx.fillText("🧠 RAM:", 300, y + 55);
+      ctx.fillText("🧠 RAM:", x + 180, y + 55);
       const ramUsage = (server.status.MemUsed / server.host.MemTotal) * 100;
-      drawProgressBar(ctx, 365, y + 42, 200, ramUsage);
+      drawProgressBar(ctx, x + 235, y + 42, 120, ramUsage);
 
       // 网络流量
       ctx.fillText("总下载:", 620, y + 25);
