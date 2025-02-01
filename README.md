@@ -7,7 +7,7 @@
 
 ## 示例
 
-![image](https://github.com/user-attachments/assets/4c742fca-8b9f-48ef-b88d-9e1d557e770e)
+![Status Image](https://statuspic.cpu.red/status)
 
 > 示例图片是静态的
 
