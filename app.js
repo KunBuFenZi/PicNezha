@@ -295,6 +295,12 @@ app.get("/status", async (req, res) => {
   }
 });
 
+function isOnline(server) {
+  const now = Date.now();
+  const lastActive = new Date(server.last_active).getTime();
+  return (now - lastActive) < 10000; // 10秒内认为在线
+}
+
 // 画进度条
 function drawProgressBar(ctx, x, y, width, value) {
   const height = 15;
