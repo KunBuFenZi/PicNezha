@@ -24,10 +24,11 @@ FontLibrary.use("Segoe UI Emoji", currentDir + "/seguiemj.ttf");
 
 // 添加配置变量
 const config = {
-  SERVERS_PER_ROW: process.env.SERVERS_PER_ROW || 2, // 每行显示服务器数量
-  SERVER_WIDTH: 390, // 每个服务器卡片宽度
-  SERVER_HEIGHT: 100, // 每个服务器卡片高度
-  PADDING: 10 // 卡片间距
+  SERVERS_PER_ROW: parseInt(process.env.SERVERS_PER_ROW) || 2, // 每行显示服务器数量
+  MIN_WIDTH: 350,  // 最小宽度
+  MIN_HEIGHT: 100, // 最小高度
+  PADDING: 10,     // 卡片间距
+  TEXT_LINE_HEIGHT: 20 // 文本行高
 };
 
 // 添加登录认证函数
@@ -41,6 +42,33 @@ async function authenticate(apiUrl, username, password) {
     return response.data.data.token;
   }
   throw new Error('认证失败');
+}
+
+// 添加计算文本尺寸的函数
+function measureServerCard(ctx, server) {
+  const textLines = [
+    `${server.name} ${server.statusText}`,
+    `🖥️ ${server.host.Platform}`,
+    `📍 ${server.host.CountryCode}`,
+    `⏱️ Uptime: ${moment.duration(server.status.Uptime, "seconds").humanize()}`,
+    "💻 CPU:",
+    "🧠 RAM:",
+    "总下载:",
+    "总上传:"
+  ];
+  
+  // 计算最大文本宽度
+  let maxWidth = 0;
+  textLines.forEach(line => {
+    const metrics = ctx.measureText(line);
+    maxWidth = Math.max(maxWidth, metrics.width);
+  });
+  
+  // 考虑进度条和数值的宽度
+  const totalWidth = Math.max(maxWidth + 250, config.MIN_WIDTH); // 250px 用于进度条和其他元素
+  const totalHeight = Math.max(textLines.length * config.TEXT_LINE_HEIGHT, config.MIN_HEIGHT);
+  
+  return { width: totalWidth, height: totalHeight };
 }
 
 // 在 /status 路由中使用
@@ -80,7 +108,22 @@ app.get("/status", async (req, res) => {
       }
     }));
 
-    // 计算画布尺寸
+    // 预先计算布局
+    ctx.font = 'bold 16px "Segoe UI Emoji", "WQY-ZenHei"';
+    let maxCardWidth = 0;
+    let maxCardHeight = 0;
+    
+    servers.forEach(server => {
+      const dims = measureServerCard(ctx, server);
+      maxCardWidth = Math.max(maxCardWidth, dims.width);
+      maxCardHeight = Math.max(maxCardHeight, dims.height);
+    });
+    
+    // 更新配置
+    config.SERVER_WIDTH = maxCardWidth + config.PADDING * 2;
+    config.SERVER_HEIGHT = maxCardHeight + config.PADDING * 2;
+    
+    // 重新计算画布尺寸
     const rows = Math.ceil(servers.length / config.SERVERS_PER_ROW);
     const canvasWidth = config.SERVER_WIDTH * config.SERVERS_PER_ROW + config.PADDING * (config.SERVERS_PER_ROW + 1);
     const canvasHeight = config.SERVER_HEIGHT * rows + 90 + config.PADDING * (rows + 1);
