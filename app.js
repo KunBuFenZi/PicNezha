@@ -22,15 +22,6 @@ FontLibrary.use("WQY-ZenHei", currentDir + "/wqy-zenhei.ttc");
 // FontLibrary.use("Noto Color Emoji", __dirname + "/NotoColorEmoji.ttf");
 FontLibrary.use("Segoe UI Emoji", currentDir + "/seguiemj.ttf");
 
-// 添加配置变量
-const config = {
-  SERVERS_PER_ROW: parseInt(process.env.SERVERS_PER_ROW) || 2, // 每行显示服务器数量
-  MIN_WIDTH: 350,  // 最小宽度
-  MIN_HEIGHT: 100, // 最小高度
-  PADDING: 10,     // 卡片间距
-  TEXT_LINE_HEIGHT: 20 // 文本行高
-};
-
 // 添加登录认证函数
 async function authenticate(apiUrl, username, password) {
   const response = await axios.post(`${apiUrl}/api/v1/login`, {
@@ -44,39 +35,14 @@ async function authenticate(apiUrl, username, password) {
   throw new Error('认证失败');
 }
 
-// 添加计算文本尺寸的函数
-function measureServerCard(ctx, server) {
-  const textLines = [
-    `${server.name} ${server.statusText}`,
-    `🖥️ ${server.host.Platform}`,
-    `📍 ${server.host.CountryCode}`,
-    `⏱️ Uptime: ${moment.duration(server.status.Uptime, "seconds").humanize()}`,
-    "💻 CPU:",
-    "🧠 RAM:",
-    "总下载:",
-    "总上传:"
-  ];
-  
-  // 计算最大文本宽度
-  let maxWidth = 0;
-  textLines.forEach(line => {
-    const metrics = ctx.measureText(line);
-    maxWidth = Math.max(maxWidth, metrics.width);
-  });
-  
-  // 考虑进度条和数值的宽度
-  const totalWidth = Math.max(maxWidth + 250, config.MIN_WIDTH); // 250px 用于进度条和其他元素
-  const totalHeight = Math.max(textLines.length * config.TEXT_LINE_HEIGHT, config.MIN_HEIGHT);
-  
-  return { width: totalWidth, height: totalHeight };
-}
-
 // 在 /status 路由中使用
 app.get("/status", async (req, res) => {
   try {
     const apiUrl = process.env.API_URL?.replace(/\/$/, "");
+    // 认证获取 token
     const token = await authenticate(apiUrl, process.env.USERNAME, process.env.PASSWORD);
     
+    // 获取服务器数据
     const response = await axios.get(`${apiUrl}/api/v1/server`, {
       headers: {
         Authorization: `Bearer ${token}`
@@ -90,7 +56,7 @@ app.get("/status", async (req, res) => {
     // 解析服务器数据
     const servers = response.data.data.map(server => ({
       name: server.name || "未知",
-      statusText: isOnline(server) ? "❇️在线" : "❌离线",
+      status: isOnline(server) ? "❇️在线" : "❌离线",
       host: {
         Platform: server.host?.platform || "未知",
         PlatformVersion: server.host?.version || "",
@@ -106,34 +72,10 @@ app.get("/status", async (req, res) => {
       }
     }));
 
-    // 创建临时 Canvas 用于测量
-    const measureCanvas = new Canvas(1, 1);
-    const measureCtx = measureCanvas.getContext('2d');
-    measureCtx.font = 'bold 16px "Segoe UI Emoji", "WQY-ZenHei"';
-
-    // 预先计算每个服务器卡片的尺寸
-    let maxCardWidth = 0;
-    let maxCardHeight = 0;
-    
-    servers.forEach(server => {
-      const dims = measureServerCard(measureCtx, server);
-      maxCardWidth = Math.max(maxCardWidth, dims.width);
-      maxCardHeight = Math.max(maxCardHeight, dims.height);
-    });
-    
-    // 更新配置
-    config.SERVER_WIDTH = maxCardWidth + config.PADDING * 2;
-    config.SERVER_HEIGHT = maxCardHeight + config.PADDING * 2;
-    
-    // 计算画布尺寸
-    const rows = Math.ceil(servers.length / config.SERVERS_PER_ROW);
-    const canvasWidth = config.SERVER_WIDTH * config.SERVERS_PER_ROW + config.PADDING * (config.SERVERS_PER_ROW + 1);
-    const canvasHeight = config.SERVER_HEIGHT * rows + 90 + config.PADDING * (rows + 1);
-
-    // 创建实际绘图用的画布
-    let canvas = new Canvas(canvasWidth, canvasHeight);
-    let ctx = canvas.getContext("2d");
-    ctx.textDrawingMode = "glyph";
+    // 创建画布
+    let canvas = new Canvas(800, servers.length * 100 + 90),
+      ctx = canvas.getContext("2d");
+    ctx.textDrawingMode = "glyph"; // https://github.com/Automattic/node-canvas/issues/760#issuecomment-2260271607
 
     // 背景纯色（注释掉会变透明）
     // ctx.fillStyle = "#ffffff";
@@ -244,43 +186,39 @@ app.get("/status", async (req, res) => {
     ctx.textBaseline = "alphabetic"; // 重置文本基线为对齐到标准字母基线
 
     servers.forEach((server, index) => {
-      const row = Math.floor(index / config.SERVERS_PER_ROW);
-      const col = index % config.SERVERS_PER_ROW;
-      
-      const x = config.PADDING + col * (config.SERVER_WIDTH + config.PADDING);
-      const y = 90 + row * (config.SERVER_HEIGHT + config.PADDING);
+      const y = index * 100 + 90;
 
       // 服务器名称和状态
       ctx.fillStyle = "#000";
       ctx.font = 'bold 16px "Segoe UI Emoji", "WQY-ZenHei"';
-      ctx.fillText(`${server.name} ${server.statusText}`, x + 20, y);
+      ctx.fillText(`${server.name} ${server.status}`, 30, y);
 
       // 系统信息
       ctx.font = '14px "Segoe UI Emoji", "WQY-ZenHei", Arial';
       ctx.fillText(
         `🖥️ ${server.host.Platform}`,
-        x + 20,
+        30,
         y + 25
       );
 
       // 国家
-      ctx.fillText(`📍 ${server.host.CountryCode}`, x + 20, y + 45);
+      ctx.fillText(`📍 ${server.host.CountryCode}`, 30, y + 45);
 
       // Uptime
       ctx.fillText(
         `⏱️ Uptime: ${moment.duration(server.status.Uptime, "seconds").humanize()}`,
-        x + 20,
+        30,
         y + 65
       );
 
       // CPU Usage
-      ctx.fillText("💻 CPU:", x + 180, y + 25);
-      drawProgressBar(ctx, x + 235, y + 12, 120, server.status.CPU);
+      ctx.fillText("💻 CPU:", 300, y + 25);
+      drawProgressBar(ctx, 365, y + 12, 200, server.status.CPU);
 
       // RAM Usage
-      ctx.fillText("🧠 RAM:", x + 180, y + 55);
+      ctx.fillText("🧠 RAM:", 300, y + 55);
       const ramUsage = (server.status.MemUsed / server.host.MemTotal) * 100;
-      drawProgressBar(ctx, x + 235, y + 42, 120, ramUsage);
+      drawProgressBar(ctx, 365, y + 42, 200, ramUsage);
 
       // 网络流量
       ctx.fillText("总下载:", 620, y + 25);
