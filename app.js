@@ -56,7 +56,7 @@ app.get("/status", async (req, res) => {
     // 解析服务器数据
     const servers = response.data.data.map(server => ({
       name: server.name || "未知",
-      status: isOnline(server) ? "❇️在线" : "❌离线",
+      statusText: isOnline(server) ? "❇️在线" : "❌离线",  // 改用 statusText
       host: {
         Platform: server.host?.platform || "未知",
         PlatformVersion: server.host?.version || "",
@@ -191,7 +191,7 @@ app.get("/status", async (req, res) => {
       // 服务器名称和状态
       ctx.fillStyle = "#000";
       ctx.font = 'bold 16px "Segoe UI Emoji", "WQY-ZenHei"';
-      ctx.fillText(`${server.name} ${server.status}`, 30, y);
+      ctx.fillText(`${server.name} ${server.statusText}`, 30, y);
 
       // 系统信息
       ctx.font = '14px "Segoe UI Emoji", "WQY-ZenHei", Arial';
